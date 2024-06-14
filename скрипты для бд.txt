@@ -1,0 +1,163 @@
+-- Создание таблицы Guest (Гость)
+CREATE TABLE Guest (
+    guest_id SERIAL PRIMARY KEY,
+    last_name VARCHAR(100) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    middle_name VARCHAR(100),
+    date_of_birth DATE NOT NULL,
+    passport_serial VARCHAR(20),
+    passport_number VARCHAR(20),
+    passport_issue_date DATE,
+    passport_issued_by VARCHAR(100),
+    phone_number VARCHAR(20),
+    email VARCHAR(100),
+    address_city VARCHAR(100),
+    address_street VARCHAR(100),
+    address_house VARCHAR(10),
+    address_flat VARCHAR(10)
+);
+
+-- Создание таблицы RegistrationCard (Регистрационная карта)
+CREATE TABLE RegistrationCard (
+    card_id SERIAL PRIMARY KEY,
+    guest_id INT REFERENCES Guest(guest_id),
+    check_in_date DATE NOT NULL,
+    check_out_date DATE NOT NULL,
+    room_number INT REFERENCES Room(room_number),
+    payment_method VARCHAR(50),
+    FOREIGN KEY (guest_id) REFERENCES Guest(guest_id)
+);
+
+-- Создание таблицы Room (Номер)
+CREATE TABLE Room (
+    room_number SERIAL PRIMARY KEY,
+    room_class VARCHAR(50) NOT NULL,
+    price_per_night DECIMAL(10, 2) NOT NULL
+);
+
+-- Создание таблицы Service (Дополнительная услуга)
+CREATE TABLE Service (
+    service_id SERIAL PRIMARY KEY,
+    service_name VARCHAR(100) NOT NULL,
+    service_price DECIMAL(10, 2) NOT NULL
+);
+
+-- Создание таблицы Employee (Сотрудник)
+CREATE TABLE Employee (
+    employee_id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    full_name VARCHAR(100) NOT NULL,
+    date_of_birth DATE NOT NULL,
+    phone_number VARCHAR(20),
+    address_city VARCHAR(100),
+    address_street VARCHAR(100),
+    address_house VARCHAR(10),
+    address_flat VARCHAR(10)
+);
+
+-- Создание таблицы HistoryCost (История изменения цен)
+CREATE TABLE HistoryCost (
+    change_date DATE,
+    service_id INT REFERENCES Service(service_id),
+    old_price DECIMAL(10, 2),
+    new_price DECIMAL(10, 2)
+);
+
+-- Создание триггера для записи изменений цен в HistoryCost
+CREATE OR REPLACE FUNCTION trg_update_service_price_history()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO HistoryCost (change_date, service_id, old_price, new_price)
+    VALUES (current_date, NEW.service_id, OLD.service_price, NEW.service_price);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER update_service_price_history
+BEFORE UPDATE ON Service
+FOR EACH ROW
+WHEN (OLD.service_price <> NEW.service_price)
+EXECUTE FUNCTION trg_update_service_price_history();
+
+-- Вставка начальных тестовых данных
+
+-- Для таблицы Guest
+INSERT INTO Guest (last_name, first_name, date_of_birth, phone_number, email, address_city, address_street, address_house, address_flat)
+VALUES
+    ('Иванов', 'Иван', '1980-01-15', '+1234567890', 'ivanov@example.com', 'Москва', 'Центральная', '1', '10'),
+    ('Петров', 'Петр', '1990-05-20', '+9876543210', 'petrov@example.com', 'Санкт-Петербург', 'Невский', '5', '15');
+
+-- Для таблицы Room
+INSERT INTO Room (room_class, price_per_night)
+VALUES
+    ('Эконом', 5000.00),
+    ('Стандарт', 8000.00),
+    ('Полулюкс', 12000.00),
+    ('Люкс', 18000.00),
+    ('Президентский', 30000.00);
+
+-- Для таблицы Service
+INSERT INTO Service (service_name, service_price)
+VALUES
+    ('Бассейн', 1000.00),
+    ('Спортивный зал', 500.00),
+    ('Прокат велосипедов', 200.00),
+    ('Массаж', 1500.00),
+    ('Ужин в номер', 2500.00);
+
+-- Для таблицы Employee - предположим, что у нас два сотрудника
+INSERT INTO Employee (full_name, date_of_birth, phone_number, address_city, address_street, address_house, address_flat)
+VALUES
+    ('Сидорова Анна Ивановна', '1985-06-10', '+71234567890', 'Москва', 'Пушкинская', '5', '2'),
+    ('Козлов Петр Сергеевич', '1990-11-20', '+74991234567', 'Санкт-Петербург', 'Ленина', '10', '15');
+
+-- Для таблицы HistoryCost - предположим, что у нас две записи об изменении цен
+INSERT INTO HistoryCost (change_date, service_id, old_price, new_price)
+VALUES
+    ('2024-01-01', 1, 1000.00, 1200.00),
+    ('2024-02-15', 2, 500.00, 600.00);
+
+-- Для таблицы RegistrationCard - создадим записи для двух гостей с несколькими регистрационными картами
+INSERT INTO RegistrationCard (guest_id, check_in_date, check_out_date, room_number, payment_method)
+VALUES
+    (1, '2024-05-01', '2024-05-05', 2, 'Кредитная карта'),
+    (1, '2024-06-10', '2024-06-15', 4, 'Наличные');
+
+INSERT INTO RegistrationCard (guest_id, check_in_date, check_out_date, room_number, payment_method)
+VALUES
+    (2, '2024-07-01', '2024-07-10', 3, 'Кредитная карта'),
+    (2, '2024-08-15', '2024-08-20', 5, 'Банковский перевод');
+
+-- Пример использования дополнительных услуг в регистрационных картах
+INSERT INTO RegistrationCardService (card_id, service_id)
+VALUES
+    (1, 1),
+    (1, 2),
+    (3, 3),
+    (4, 4);
+
+Процедура проверки адреса электронной почты
+-- Создание функции для проверки адреса электронной почты
+CREATE OR REPLACE FUNCTION check_email_validity()
+RETURNS TABLE(email VARCHAR(100), is_valid BOOLEAN) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        email,
+        CASE
+            -- Проверка наличия недопустимых символов в адресе электронной почты
+            WHEN email ~ '[^A-Za-z0-9@._-]' THEN FALSE
+            -- Проверка на наличие символов, которые часто приводят к ошибкам
+            WHEN email ~ '[\"<>\\'']' THEN FALSE
+            -- Проверка формата адреса электронной почты
+            WHEN email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}$' THEN FALSE
+            ELSE TRUE
+        END
+    FROM (
+        SELECT DISTINCT email FROM GuestRegistration
+    ) AS valid_emails;
+END;
+$$ LANGUAGE plpgsql;
+
+
+ расширение
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

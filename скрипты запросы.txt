@@ -1,0 +1,63 @@
+-- Запрос для вывода списка клиентов с указанием дат проживания и суммы к оплате
+SELECT
+    CONCAT(g.last_name, ' ', g.first_name) AS guest_name,
+    rc.check_in_date,
+    rc.check_out_date,
+    ((rc.check_out_date - rc.check_in_date) + 1) * r.price_per_night AS room_cost,
+    COALESCE((
+        SELECT SUM(s.service_price)
+        FROM service s
+        JOIN registrationcardservices rcs ON s.service_id = rcs.service_id
+        WHERE rcs.card_id = rc.card_id
+    ), 0) AS total_additional_services_cost,
+    (((rc.check_out_date - rc.check_in_date) + 1) * r.price_per_night) +
+    COALESCE((
+        SELECT SUM(s.service_price)
+        FROM service s
+        JOIN registrationcardservices rcs ON s.service_id = rcs.service_id
+        WHERE rcs.card_id = rc.card_id
+    ), 0) AS total_cost
+FROM
+    guest g
+    JOIN registrationcard rc ON g.guest_id = rc.guest_id
+    JOIN room r ON rc.room_number = r.room_number
+ORDER BY
+    guest_name;
+
+доп запрос
+-- Найти услуги, которые не были заказаны клиентами
+SELECT *
+FROM Service s
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM RegistrationCardServices rcs
+    WHERE rcs.service_id = s.service_id
+);
+-- Отключение ограничения внешнего ключа historycost_service_id_fkey
+ALTER TABLE HistoryCost DROP CONSTRAINT IF EXISTS historycost_service_id_fkey;
+
+-- Удалить услуги, которые не были заказаны клиентами
+DELETE FROM Service
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM RegistrationCardServices rcs
+    WHERE rcs.service_id = Service.service_id
+);
+
+-- Восстановление ограничения внешнего ключа historycost_service_id_fkey
+ALTER TABLE HistoryCost ADD CONSTRAINT historycost_service_id_fkey FOREIGN KEY (service_id) REFERENCES Service(service_id);
+
+
+-- Обновить цену популярного номера
+UPDATE Room
+SET price_per_night = price_per_night * 1.15
+WHERE room_number = (
+    SELECT room_number
+    FROM (
+        SELECT room_number, COUNT(*) AS num_bookings
+        FROM RegistrationCard
+        GROUP BY room_number
+        ORDER BY num_bookings DESC
+        LIMIT 1
+    ) AS popular_room
+);
